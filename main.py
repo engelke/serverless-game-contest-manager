@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from datetime import datetime
-from flask import Flask, render_template, request
+from flask import Flask, redirect, render_template, request
 import json
 import os
 import uuid
@@ -34,12 +34,25 @@ def echo_recent_results():
             'timestamp': entity['timestamp'].isoformat(),
             'user': entity['user'],
             'player_url': entity['player_url'],
+            'key': entity.key,
             'runs': []
         } for entity in query.fetch()
     ]
+
+    for trial in trials:
+        query = client.query(
+            kind='Result', 
+            order=['-questioner'], 
+            ancestor=trial['key']
+        )
+        for entity in query.fetch():
+            trial['runs'].append({
+                'questioner': entity['questioner'],
+                'outcome': entity['outcome'],
+                'moves': entity['moves']
+            })
     
     page = render_template('index.html', trials=trials)
-    print(page)  # Debugging
     return page
 
 
@@ -71,11 +84,12 @@ def start_trial():
         'contest_round': contest_round,
         'player_url': player_url,
         'result_url': 'https://{project_id}.appspot.com/report-result'.format(
-            os.getenv('GOOGLE_CLOUD_PROJECT')
+            project_id=os.getenv('GOOGLE_CLOUD_PROJECT')
         )
     }
     
-    publisher.publish(topic_name, bytes(json.dumps(payload)))
+    publisher.publish(topic_name, json.dumps(payload).encode())
+    return redirect('/', code=302)
 
 
 @app.route('/report-result', methods=['POST'])

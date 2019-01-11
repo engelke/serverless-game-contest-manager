@@ -8,7 +8,7 @@
 
   <dl>
     {% for trial in trials %}
-    <dt>Requested at {{ trial['timestamp'] }} by {{ trial['user'] }} for {{ trial['url'] }}</dt>
+    <dt>Requested at {{ trial['timestamp'] }} by {{ trial['user'] }} for {{ trial['player_url'] }}</dt>
     <dd>
         Runs:<br/>
         {% for run in trial['runs'] %}
