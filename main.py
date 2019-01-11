@@ -56,6 +56,11 @@ def echo_recent_results():
     return page
 
 
+@app.route('/request-trial', methods=['GET'])
+def trial_form():
+    return render_template('trial_form.html')
+
+
 @app.route('/request-trial', methods=['POST'])
 def start_trial():
     user = request.form['user']
