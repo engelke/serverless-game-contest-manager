@@ -13,9 +13,13 @@
 # limitations under the License.
 
 from datetime import datetime
+from flask import Flask, render_template, request
+import json
+import os
 import uuid
-from flask import Flask, request
+
 from google.cloud import datastore
+from google.cloud import pubsub
 
 
 app = Flask(__name__)
@@ -23,59 +27,84 @@ app = Flask(__name__)
 
 @app.route('/', methods=['GET'])
 def echo_recent_results():
-    page = """
-<!doctype html>
-<html>
-<head>
-  <title>Recent Results</title>
-</head>
-<body>
-  <h1>Recent Results</h1>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Timestamp</th>
-        <th>Posted Result</th>
-      </tr>
-    </thead>
-    <tbody>
-    """
-    
     client = datastore.Client()
-    query = client.query(kind='Result', order=['-timestamp'])
-    for result in query.fetch(limit=20):
-        page += """
-      <tr>
-        <td>{}</td>
-        <td>{}</td>
-      </tr>
-        """.format(result['timestamp'].isoformat(), result['result'])
-
-    page += """
-    </tbody>
-  </table>
-</body>
-</html>
-    """        
-
-    print(page)
+    query = client.query(kind='Trial', order=['-timestamp'])
+    trials = [
+        {
+            'timestamp': entity['timestamp'].isoformat(),
+            'user': entity['user'],
+            'player_url': entity['player_url'],
+            'runs': []
+        } for entity in query.fetch()
+    ]
+    
+    page = render_template('index.html', trials=trials)
+    print(page)  # Debugging
     return page
 
 
-@app.route('/', methods=['POST'])
-def save_result():
-    body = request.get_data(as_text=True)
-    id = str(uuid.uuid4())
-    
+@app.route('/request-trial', methods=['POST'])
+def start_trial():
+    user = request.form['user']
+    player_url = request.form['player_url']
+
+    contest_round = str(uuid.uuid4())
+    timestamp = datetime.utcnow()
+
     client = datastore.Client()
-    key = client.key('Result', id)
+    key = client.key('Trial', contest_round)
     entity = datastore.Entity(key=key)
     entity.update({
-        'result': body,
-        'timestamp': datetime.utcnow()
+        'user': user,
+        'player_url': player_url,
+        'timestamp': timestamp
     })
     client.put(entity)
+
+    publisher = pubsub.PublisherClient()
+    topic_name = 'projects/{project_id}/topics/{topic}'.format(
+        project_id=os.getenv('GOOGLE_CLOUD_PROJECT'),
+        topic='play-a-game'
+    )
+    
+    payload = {
+        'contest_round': contest_round,
+        'player_url': player_url,
+        'result_url': 'https://{project_id}.appspot.com/report-result'.format(
+            os.getenv('GOOGLE_CLOUD_PROJECT')
+        )
+    }
+    
+    publisher.publish(topic_name, bytes(json.dumps(payload)))
+
+
+@app.route('/report-result', methods=['POST'])
+def save_result():
+    result = request.get_json()
+    if result is None:
+        return 415  # Was not sent application/json, can't handle it
+
+    client = datastore.Client()
+        
+    contest_round = result['contest_round']
+    outcome = result['outcome']
+    moves = result['moves']
+    questioner = result['questioner']
+
+    trial_key = client.key('Trial', contest_round)
+    trial_entity = client.get(trial_key)
+    if trial_entity is None:
+        return 404  # A result we never asked for
+    
+    result_id = str(uuid.uuid4())
+    result_key = client.key('Result', result_id, parent=trial_key)
+    result_entity = datastore.Entity(key=result_key)
+    result_entity.update({
+        'questioner': questioner,
+        'outcome': outcome,
+        'moves': moves
+    })
+    client.put(result_entity)
     
     return 'Okay'
 
