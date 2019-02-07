@@ -14,34 +14,48 @@
 
 from flask import request
 from jose import jwt
+import os
 import requests
 
-KEYS = None
+KEYS = None     # Cached public keys for verification
 
 
+# Google publishes the public keys needed to verify a JWT. Save them in KEYS.
 def refresh_keys():
     global KEYS
     try:
         resp = requests.get('https://www.gstatic.com/iap/verify/public_key')
         KEYS = resp.json()
     except:
-        pass    # TODO: log this event
+        # KEYS is stale (not good, but not disastrous) or missing (very bad)
+        if resp:
+            message = 'Status {}: {}'.format(resp.status_code, resp.text)
+        else:
+            message = 'None'
+        logging.critical('Key fetching failed, returned ' + message)
 
 
-# Return the authenticated user's email address.
+# Return the authenticated user's email address if available from Cloud
+# Identity Aware Proxy (IAP). If IAP is not active, returns None.
 #
-# Raises an exception if no such user (indicates IAP configuration error), or
-# JWT token is invalid (indicates bypass of IAP)
+# Raises an exception if IAP header exists, but JWT token is invalid, which
+# would indicates bypass of IAP or inability to fetch KEYS.
 def email():
+    assertion = request.headers.get('x-goog-iap-jwt-assertion')
+    if assertion is None:   # Request did not come through IAP
+        return None
+
     if KEYS is None:
         refresh_keys()
 
-    assertion = request.headers.get('x-goog-iap-jwt-assertion')
+    project_id = os.getenv('GOOGLE_CLOUD_PROJECT', None)
+    project_number = os.getenv('PROJECT_ID')
+
     info = jwt.decode(
         assertion, 
         KEYS, 
         algorithms=['ES256'], 
-        audience='/projects/470716193886/apps/engelke-game-player'
+        audience='/projects/{}/apps/{}'.format(project_id, project_number)
     )
     
     return info['email']

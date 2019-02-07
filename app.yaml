@@ -1,1 +1,5 @@
 runtime: python37
+
+env_variables:
+# Needed to verify IAP user identity assertion  
+  PROJECT_ID: "470716193886"

@@ -68,7 +68,7 @@ def trial_form():
 # User asks for a player to be run by questioner(s)
 @app.route('/request-trial', methods=['POST'])
 def start_trial():
-    # Get the real user's email via Cloud IAP
+    # Get the real user's email via Cloud IAP, if available
     email = auth.email()
 
     # Information about requested trial submitted by user
@@ -144,13 +144,6 @@ def save_result():
     
     # Acknowledge a successful report
     return 201  # Created (a new contest score entry)
-
-
-# TODO: remove this temporary debugging aid
-@app.route('/debug')
-def echo_header():
-    assertion = request.headers.get('x-goog-iap-jwt-assertion')
-    return assertion
 
 
 if __name__ == '__main__':
