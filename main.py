@@ -21,10 +21,13 @@ import uuid
 from google.cloud import datastore
 from google.cloud import pubsub
 
+import auth
+
 
 app = Flask(__name__)
 
 
+# Minimal UI - home page shows current results, link to request new player run
 @app.route('/', methods=['GET'])
 def echo_recent_results():
     client = datastore.Client()
@@ -56,35 +59,44 @@ def echo_recent_results():
     return page
 
 
+# User navigates to a page to ask for a player to be questioned
 @app.route('/request-trial', methods=['GET'])
 def trial_form():
     return render_template('trial_form.html')
 
 
+# User asks for a player to be run by questioner(s)
 @app.route('/request-trial', methods=['POST'])
 def start_trial():
+    # Get the real user's email via Cloud IAP
+    email = auth.email()
+
+    # Information about requested trial submitted by user
     user = request.form['user']
     player_url = request.form['player_url']
 
+    # Internal identifiers for tracking results
     contest_round = str(uuid.uuid4())
     timestamp = datetime.utcnow()
 
+    # Remember the trial being requested
     client = datastore.Client()
     key = client.key('Trial', contest_round)
     entity = datastore.Entity(key=key)
     entity.update({
+        'email': email,
         'user': user,
         'player_url': player_url,
         'timestamp': timestamp
     })
     client.put(entity)
 
+    # Request trial runs by publishing message to all questioners
     publisher = pubsub.PublisherClient()
     topic_name = 'projects/{project_id}/topics/{topic}'.format(
         project_id=os.getenv('GOOGLE_CLOUD_PROJECT'),
         topic='play-a-game'
     )
-    
     payload = {
         'contest_round': contest_round,
         'player_url': player_url,
@@ -92,29 +104,34 @@ def start_trial():
             project_id=os.getenv('GOOGLE_CLOUD_PROJECT')
         )
     }
-    
     publisher.publish(topic_name, json.dumps(payload).encode())
+
+    # TODO: acknowledge to the user that the trial(s) are pending
     return redirect('/', code=302)
 
 
+# A questioner reports a result
 @app.route('/report-result', methods=['POST'])
 def save_result():
+    # All result reports should be in JSON form
     result = request.get_json()
     if result is None:
-        return 415  # Was not sent application/json, can't handle it
+        return 415  # Unsupported media type (not application/json)
 
-    client = datastore.Client()
-        
+    # Reported result data in payload
     contest_round = result['contest_round']
     outcome = result['outcome']
     moves = result['moves']
     questioner = result['questioner']
 
+    # Look up contest_round random ID to be sure this is a genuine report
+    client = datastore.Client()
     trial_key = client.key('Trial', contest_round)
     trial_entity = client.get(trial_key)
     if trial_entity is None:
-        return 404  # A result we never asked for
+        return 404  # Not found - no such contest_round was ever asked for
     
+    # Update results with new data
     result_id = str(uuid.uuid4())
     result_key = client.key('Result', result_id, parent=trial_key)
     result_entity = datastore.Entity(key=result_key)
@@ -125,7 +142,15 @@ def save_result():
     })
     client.put(result_entity)
     
-    return 'Okay'
+    # Acknowledge a successful report
+    return 201  # Created (a new contest score entry)
+
+
+# TODO: remove this temporary debugging aid
+@app.route('/debug')
+def echo_header():
+    assertion = request.headers.get('x-goog-iap-jwt-assertion')
+    return assertion
 
 
 if __name__ == '__main__':
