@@ -91,6 +91,18 @@ def start_trial():
     })
     client.put(entity)
 
+    # Determine the URL for reporting results. Unless Identity Aware Proxy is
+    # enabled to restrict access to the App Engine app, that URL can be served
+    # by this App Engine instance itself.
+    project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+    result_url = 'https://{}.appspot.com/report-result'.format(project_id)
+
+    # If Identity Aware Proxy is activated, the questioner Cloud Functions will
+    # not be able to connect to this App Engine app. In that case, a separate
+    # Cloud Function will be used to receive and record scores. To enable that,
+    # fill in the Cloud Function's URL and uncomment the line below:
+    # result_url = 'report-cloud-function-url'
+
     # Request trial runs by publishing message to all questioners
     publisher = pubsub.PublisherClient()
     topic_name = 'projects/{project_id}/topics/{topic}'.format(
@@ -100,9 +112,7 @@ def start_trial():
     payload = {
         'contest_round': contest_round,
         'player_url': player_url,
-        'result_url': 'https://{project_id}.appspot.com/report-result'.format(
-            project_id=os.getenv('GOOGLE_CLOUD_PROJECT')
-        )
+        'result_url': result_url
     }
     publisher.publish(topic_name, json.dumps(payload).encode())
 
