@@ -18,9 +18,5 @@ import json
 # This guesser doesn't learn from history and will usually never succeed.
 def make_guess(request):
     game = request.get_json()
-
-    min = game['minimum']
-    max = game['maximum']
-    guess = (min + max) // 2
-
+    guess = game['minimum']
     return json.dumps(guess)
