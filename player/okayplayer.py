@@ -20,17 +20,12 @@ def make_guess(request):
     game = request.get_json()
 
     min = game['minimum']
-    max = game['maximum']
 
     for old_guess in game['history']:
         if old_guess['result'] == 'higher': # The minimum is at least one more
             new_min = old_guess['guess'] + 1
             if new_min > min:
                 min = new_min
-        elif old_guess['result'] == 'lower': # Maximum is at least one less
-            new_max = old_guess['guess'] - 1
-            if new_max < max:
-                max = new_max
 
     guess = min
 
